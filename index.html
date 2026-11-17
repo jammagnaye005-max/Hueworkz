@@ -125,9 +125,11 @@ table.gt2 td{padding:0;border-bottom:1px solid var(--line);border-right:1px soli
 table.gt2 td.ro{padding:0 10px;white-space:nowrap}
 table.gt2 td.act{white-space:nowrap;padding:0 6px;text-align:center}
 table.gt2 tr.draftrow td{background:#fff8ec}
-table.gt2 td.stk,table.gt2 th.stk{position:sticky;left:0;z-index:2}
+table.gt2 td.stk0,table.gt2 th.stk0{position:sticky;left:0;z-index:2;width:76px;min-width:76px;max-width:76px}
+table.gt2 th.stk0{z-index:5}
+table.gt2 td.stk,table.gt2 th.stk{position:sticky;left:76px;z-index:2}
 table.gt2 th.stk{z-index:4}
-table.gt2 tr.draftrow td.stk{background:#fff8ec}
+table.gt2 tr.draftrow td.stk,table.gt2 tr.draftrow td.stk0{background:#fff8ec}
 input.g,select.g{border:0;border-radius:0;background:transparent;padding:9px 8px;height:38px;width:100%;box-shadow:none}
 input.g:focus,select.g:focus{background:#fff;outline:2px solid var(--slate);outline-offset:-2px;box-shadow:none}
 select.g{cursor:pointer}
@@ -455,7 +457,7 @@ const orderOpts = () => state.d.clientOrders.map(c => [c.orderNo, `${c.orderNo} 
 const GRID = {
   clientOrders: {
     coll: "clientOrders", required: ["orderNo", "client"], uniq: "orderNo",
-    hint: "Type in the top (orange) row to add an order — press Tab to move across, Enter or click away to save. Edit any cell directly; it saves when you leave it.",
+    hint: "Type in the top (orange) row, then click <b>+ New</b> (first column) or press Enter to add it. Edit any cell directly; it saves when you leave it.",
     defaults: () => ({orderNo: nextOrderNo(), orderDate: todayISO(), status: "New"}),
     cols: [gi("orderNo", "Order No.", {w: 105, stk: 1}), gi("client", "Client Name", {w: 150}), gi("company", "Company", {w: 140}), gi("description", "Description", {w: 230}),
       gi("dueDate", "Due Date", {t: "date", w: 135}), gi("status", "Status", {t: "select", o: CO_STATUS, w: 150}), gi("amount", "Amount (₱)", {t: "number", w: 115}), gi("paid", "Collected (₱)", {t: "number", w: 115}),
@@ -468,7 +470,7 @@ const GRID = {
   },
   supplierOrders: {
     coll: "supplierOrders", required: ["orderNo", "item", "supplier", "qty"],
-    hint: "One row per item bought from a supplier. Type in the top (orange) row; the Client Order column links it to the customer. The alert updates by itself.",
+    hint: "One row per item bought from a supplier. Type in the top (orange) row, then click <b>+ New</b> (first column) or press Enter; the Client Order column links it to the customer. The alert updates by itself.",
     defaults: prev => ({orderNo: prev?.orderNo || "", status: "Not yet ordered", payment: "Unpaid"}),
     cols: [{l: "Alert", ro: 1, f: r => alertPill(lineAlert(r)), c: r => lineAlert(r)}, gi("orderNo", "Client Order", {t: "select", o: orderOpts, w: 190, stk: 0}), gi("item", "Item / Description", {w: 220}), gi("qty", "Qty", {t: "number", w: 80}),
       gi("supplier", "Supplier", {w: 150}), gi("status", "Status", {t: "select", o: SO_STATUS, w: 160}), gi("expectedDate", "Expected", {t: "date", w: 135}), gi("qtyReceived", "Qty Recvd", {t: "number", w: 90}),
@@ -494,7 +496,7 @@ const GRID = {
   },
   purchases: {
     coll: "purchases", required: ["poNo", "supplier", "item"],
-    hint: "Purchase order list — one row per item. Rows with the same PO No. belong to the same purchase order. Type in the top (orange) row; it keeps the PO No., date and supplier so you can add the next item quickly. Use “+ New PO number” to start another PO, and Print PO to get the form.",
+    hint: "Purchase order list — one row per item. Rows with the same PO No. belong to the same purchase order. Type in the top (orange) row, then click <b>+ New</b> (first column) or press Enter; it keeps the PO No., date and supplier so you can add the next item quickly. Use “+ New PO number” to start another PO, and Print PO to get the form.",
     defaults: prev => ({poNo: prev?.poNo || nextPONo(), date: prev?.date || todayISO(), supplier: prev?.supplier || "", expectedDate: prev?.expectedDate || "", status: prev?.status || "Draft", payment: prev?.payment || "Unpaid"}),
     cols: [gi("poNo", "PO No.", {w: 150, stk: 1}), gi("date", "PO Date", {t: "date", w: 135}), gi("supplier", "Supplier", {w: 150}), gi("orderNo", "For client order", {t: "select", o: orderOpts, w: 190}),
       gi("item", "Item / Description", {w: 220}), gi("qty", "Qty", {t: "number", w: 80}), gi("unit", "Unit", {w: 80}), gi("cost", "Unit Cost (₱)", {t: "number", w: 115}),
@@ -525,17 +527,18 @@ function draftOf(R) {
 }
 function renderGrid() {
   const R = state.route, G = GRID[R], rows = filtered(), d = draftOf(R);
-  const head = G.cols.map(c => `<th class="${c.stk ? "stk" : ""} ${c.n ? "num" : ""}">${c.l}</th>`).join("") + "<th></th>";
-  const draft = `<tr class="draftrow" data-rid="draft">${G.cols.map(c => gCell(c, d, "draft")).join("")}<td class="act"><span class="mute sm">＋ new</span></td></tr>`;
-  const body = rows.map(r => `<tr data-rid="${r.id}">${G.cols.map(c => gCell(c, r, r.id)).join("")}<td class="act">${G.actions(r)} ${canDel(r) ? `<button class="xbtn" data-act="del" data-coll="${G.coll}" data-id="${r.id}" title="Delete">✕</button>` : ""}</td></tr>`).join("");
+  const head = `<th class="stk0"></th>` + G.cols.map(c => `<th class="${c.stk ? "stk" : ""} ${c.n ? "num" : ""}">${c.l}</th>`).join("") + "<th></th>";
+  const draft = `<tr class="draftrow" data-rid="draft"><td class="act stk0"><button class="btn or sm" data-act="add-row" type="button">+ New</button></td>${G.cols.map(c => gCell(c, d, "draft")).join("")}<td class="act"></td></tr>`;
+  const body = rows.map(r => `<tr data-rid="${r.id}"><td class="act stk0">${canDel(r) ? `<button class="xbtn" data-act="del" data-coll="${G.coll}" data-id="${r.id}" title="Delete this row" type="button">✕</button>` : ""}</td>${G.cols.map(c => gCell(c, r, r.id)).join("")}<td class="act">${G.actions(r)}</td></tr>`).join("");
   $("#tbl").innerHTML = `<table class="gt2"><thead><tr>${head}</tr></thead><tbody>${draft}${body}</tbody></table>`;
 }
 const gridFocused = () => { const a = document.activeElement; return !!(a && a.closest && a.closest("#tbl") && /INPUT|SELECT/.test(a.tagName)); };
 const gridVal = el => el.type === "number" ? (el.value === "" ? null : Number(el.value)) : el.value.trim();
-async function commitDraft() {
+async function commitDraft(manual) {
   const R = state.route, G = GRID[R]; if (!G || state.committing) return;
-  const d = state.draft[R]; if (!d || !d._u) return;
-  if (G.required.some(k => d[k] == null || d[k] === "")) return;
+  const d = state.draft[R]; if (!d || !d._u) { if (manual) toast("Type the details in the orange row first, then click + New."); return; }
+  const miss = G.required.filter(k => d[k] == null || d[k] === "");
+  if (miss.length) { if (manual) toast("Please fill in: " + miss.map(k => G.cols.find(c => c.k === k).l).join(", ")); return; }
   const o = {}; Object.keys(d).forEach(k => { if (!k.startsWith("_") && d[k] !== "" && d[k] !== undefined) o[k] = d[k]; });
   if (G.uniq && state.d[R].some(x => x[G.uniq] === o[G.uniq])) { toast("That " + G.cols.find(c => c.k === G.uniq).l + " already exists."); return; }
   state.committing = true;
@@ -706,6 +709,7 @@ document.addEventListener("click", async e => {
       case "logout": await signOut(auth); break;
       case "csv": exportCSV(); break;
       case "view-co": viewCO(id); break;
+      case "add-row": await commitDraft(true); break;
       case "go-so-order": closeModal(); state.f.supplierOrders = {orderNo: a.dataset.order}; go("supplierOrders"); break;
       case "print-po": e.stopPropagation(); printPO(a.dataset.po); break;
       case "po-track": await poTrack(id); break;
