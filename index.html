@@ -117,6 +117,28 @@ table.items input{padding:7px 8px}
 .kv span:nth-child(odd){color:var(--mute)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--teal-d);color:#fff;padding:11px 18px;border-radius:10px;z-index:90;box-shadow:0 8px 24px rgba(0,0,0,.3)}
 .banner{background:var(--amb-bg);border:1px solid #f0cf9a;color:#7a4a00;padding:12px 16px;border-radius:10px;margin-bottom:16px}
+/* grid */
+.tw.gw{max-height:calc(100vh - 230px);overflow:auto}
+table.gt2{border-collapse:separate;border-spacing:0;min-width:100%}
+table.gt2 th{position:sticky;top:0;z-index:3;background:#f3f5f7;text-align:left;font-size:11.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;padding:9px 8px;white-space:nowrap;border-bottom:2px solid var(--line);border-right:1px solid var(--line)}
+table.gt2 td{padding:0;border-bottom:1px solid var(--line);border-right:1px solid #eef1f3;background:#fff;vertical-align:middle}
+table.gt2 td.ro{padding:0 10px;white-space:nowrap}
+table.gt2 td.act{white-space:nowrap;padding:0 6px;text-align:center}
+table.gt2 tr.draftrow td{background:#fff8ec}
+table.gt2 td.stk,table.gt2 th.stk{position:sticky;left:0;z-index:2}
+table.gt2 th.stk{z-index:4}
+table.gt2 tr.draftrow td.stk{background:#fff8ec}
+input.g,select.g{border:0;border-radius:0;background:transparent;padding:9px 8px;height:38px;width:100%;box-shadow:none}
+input.g:focus,select.g:focus{background:#fff;outline:2px solid var(--slate);outline-offset:-2px;box-shadow:none}
+select.g{cursor:pointer}
+select.g.p-red{background:var(--red-bg);color:var(--red);font-weight:600}
+select.g.p-amb{background:var(--amb-bg);color:var(--amb);font-weight:600}
+select.g.p-grn{background:var(--grn-bg);color:var(--grn);font-weight:600}
+select.g.p-blu{background:var(--blu-bg);color:var(--blu);font-weight:600}
+input.g[type=number]{text-align:right}
+.gh{font-size:12px;color:var(--mute);padding:8px 12px;background:#fffaf2;border-bottom:1px solid var(--line)}
+.xbtn{background:none;border:0;color:var(--mute);font-size:16px;padding:4px 7px;border-radius:6px}
+.xbtn:hover{background:var(--red-bg);color:var(--red)}
 /* print */
 #print{display:none}
 @media print{
@@ -273,7 +295,7 @@ const pill = s => s ? `<span class="pill ${pillClass(s)}">${esc(s)}</span>` : ""
 const alertPill = a => a ? `<span class="pill ${a === "OVERDUE" ? "red" : a === "DUE SOON" ? "amb" : "blu"}">${a}</span>` : "";
 
 /* ---------- state ---------- */
-const state = {user: null, profile: null, route: "dashboard", d: {clientOrders: [], supplierOrders: [], quotations: [], purchases: [], users: []}, f: {}, unsubs: []};
+const state = {user: null, profile: null, route: "dashboard", d: {clientOrders: [], supplierOrders: [], quotations: [], purchases: [], users: []}, f: {}, unsubs: [], draft: {}, prevRow: {}, pending: false, committing: false, built: null};
 
 /* ---------- derived ---------- */
 const lineAlert = o => {
@@ -304,24 +326,6 @@ async function saveDoc(coll, id, data) {
 const isAdmin = () => state.profile?.role === "admin";
 
 /* ---------- field forms ---------- */
-const coFields = () => [
-  {k: "orderNo", l: "Order No.", req: 1}, {k: "quoteNo", l: "Quotation No. (if any)"},
-  {k: "client", l: "Client Name", req: 1}, {k: "company", l: "Company"},
-  {k: "contact", l: "Contact No."}, {k: "email", l: "Email"},
-  {k: "description", l: "Order / project description", t: "textarea", full: 1},
-  {k: "orderDate", l: "Order Date", t: "date"}, {k: "dueDate", l: "Due / Delivery Date", t: "date"},
-  {k: "status", l: "Status", t: "select", o: CO_STATUS},
-  {k: "amount", l: "Order Amount (₱)", t: "number"}, {k: "paid", l: "Amount Collected (₱)", t: "number"},
-  {k: "notes", l: "Notes", t: "textarea", full: 1}];
-const soFields = () => [
-  {k: "orderNo", l: "Client Order No.", t: "select", req: 1, o: () => state.d.clientOrders.map(c => [c.orderNo, `${c.orderNo} — ${c.client}${c.company ? " (" + c.company + ")" : ""}`])},
-  {k: "item", l: "Item / Description", req: 1, full: 1},
-  {k: "qty", l: "Qty Ordered", t: "number", req: 1}, {k: "supplier", l: "Supplier", list: "dl-suppliers", req: 1},
-  {k: "status", l: "Status", t: "select", o: SO_STATUS}, {k: "expectedDate", l: "Expected Delivery", t: "date"},
-  {k: "qtyReceived", l: "Qty Received", t: "number"}, {k: "dateReceived", l: "Date Received", t: "date"},
-  {k: "unitCost", l: "Unit Cost (₱)", t: "number"}, {k: "payment", l: "Payment to Supplier", t: "select", o: PAY},
-  {k: "poRef", l: "Supplier PO / Ref"}, {k: "dateOrdered", l: "Date Ordered", t: "date"},
-  {k: "notes", l: "Notes", t: "textarea", full: 1}];
 function fieldHTML(f, v) {
   const id = "f-" + f.k, val = v ?? ""; let inp;
   if (f.t === "textarea") inp = `<textarea id="${id}" rows="3">${esc(val)}</textarea>`;
@@ -356,22 +360,29 @@ const TITLES = {dashboard: "Dashboard", clientOrders: "Client Orders", supplierO
 function renderNav() {
   const so = state.d.supplierOrders;
   const urgent = so.filter(s => ["OVERDUE", "TO ORDER"].includes(lineAlert(s))).length;
-  const counts = {clientOrders: state.d.clientOrders.filter(c => !["Completed", "Cancelled"].includes(c.status)).length, supplierOrders: urgent, quotations: state.d.quotations.filter(q => ["Draft", "Sent"].includes(qStatus(q))).length, purchases: state.d.purchases.filter(p => ["Draft", "Sent", "Confirmed"].includes(p.status)).length};
+  const counts = {clientOrders: state.d.clientOrders.filter(c => !["Completed", "Cancelled"].includes(c.status)).length, supplierOrders: urgent, quotations: state.d.quotations.filter(q => ["Draft", "Sent"].includes(qStatus(q))).length, purchases: new Set(state.d.purchases.filter(p => !["Received", "Cancelled"].includes(p.status)).map(p => p.poNo)).size};
   $("#nav").innerHTML = NAV.filter(g => !g.admin || isAdmin()).map(g => `${g.g ? `<div class="grp">${g.g}</div>` : ""}${g.items.map(i => `<a data-act="nav" data-r="${i.id}" class="${state.route === i.id ? "on" : ""}"><span class="ic">${i.ic}</span>${i.l.replace(/ \(.*/, "")}${counts[i.id] ? `<span class="bd ${i.id === "supplierOrders" ? "warn" : ""}">${counts[i.id]}</span>` : ""}</a>`).join("")}`).join("");
 }
 function go(r, filters) {
-  state.route = r; if (filters) state.f[r] = {...(state.f[r] || {}), ...filters};
+  state.route = r; state.built = null; state.pending = false; if (filters) state.f[r] = {...(state.f[r] || {}), ...filters};
   $("#sb").classList.remove("open"); render();
 }
 function render() {
   if (!state.profile) return;
   renderNav();
+  const isGrid = !!GRID[state.route];
+  if (isGrid && state.built === state.route && $("#tbl")) {
+    if (gridFocused()) { state.pending = true; return; }
+    state.pending = false; renderTable(); return;
+  }
   $("#title").textContent = TITLES[state.route];
-  const act = {clientOrders: ["new-co", "+ New client order"], supplierOrders: ["new-so", "+ New supplier item"], quotations: ["new-q", "+ New quotation"], purchases: ["new-po", "+ New purchase order"], team: ["new-user", "+ Add user"]}[state.route];
+  const act = {quotations: ["new-q", "+ New quotation"], team: ["new-user", "+ Add user"]}[state.route];
   $("#top-act").innerHTML = act ? `<button class="btn or" data-act="${act[0]}">${act[1]}</button>` : "";
-  const dl = `<datalist id="dl-suppliers">${[...new Set(state.d.supplierOrders.map(s => s.supplier).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join("")}</datalist>`;
+  const sups = [...new Set([...state.d.supplierOrders, ...state.d.purchases].map(s => s.supplier).filter(Boolean))];
+  const dl = `<datalist id="dl-suppliers">${sups.map(s => `<option value="${esc(s)}">`).join("")}</datalist>`;
   const v = {dashboard: viewDashboard, clientOrders: viewList, supplierOrders: viewList, quotations: viewList, purchases: viewList, team: viewTeam}[state.route]();
   $("#view").innerHTML = dl + v;
+  state.built = state.route;
   if (["clientOrders", "supplierOrders", "quotations", "purchases"].includes(state.route)) renderTable();
 }
 
@@ -384,7 +395,7 @@ function viewDashboard() {
   const openQ = state.d.quotations.filter(q => ["Draft", "Sent"].includes(qStatus(q)));
   const receivable = state.d.clientOrders.filter(c => c.status !== "Cancelled").reduce((a, c) => a + Math.max(0, Number(c.amount || 0) - Number(c.paid || 0)), 0);
   const attn = [...overdue, ...toOrder, ...soon];
-  const rows = attn.slice(0, 12).map(s => `<tr class="row" data-act="edit-so" data-id="${s.id}"><td>${alertPill(s.al)}</td><td><b>${esc(s.orderNo)}</b><div class="mute sm">${esc(s.client || "")}</div></td><td>${esc(s.item)}</td><td>${esc(s.supplier)}</td><td>${fmtShort(s.expectedDate)}</td></tr>`).join("");
+  const rows = attn.slice(0, 12).map(s => `<tr class="row" data-act="go-so-order" data-order="${esc(s.orderNo)}"><td>${alertPill(s.al)}</td><td><b>${esc(s.orderNo)}</b><div class="mute sm">${esc(s.client || "")}</div></td><td>${esc(s.item)}</td><td>${esc(s.supplier)}</td><td>${fmtShort(s.expectedDate)}</td></tr>`).join("");
   const pend = active.map(c => ({c, p: progress(c.orderNo)})).sort((a, b) => (a.c.dueDate || "9") < (b.c.dueDate || "9") ? -1 : 1).slice(0, 8).map(({c, p}) => `<tr class="row" data-act="view-co" data-id="${c.id}"><td><b>${esc(c.orderNo)}</b></td><td>${esc(c.client)}</td><td>${fmtShort(c.dueDate)}</td><td>${pill(c.status)}</td><td style="min-width:130px"><div class="bar ${p.pct === 100 ? "done" : ""}"><i style="width:${p.pct}%"></i></div><div class="mute sm">${p.rec}/${p.total} items received</div></td></tr>`).join("");
   return `<div class="kpis">
     <div class="kpi" data-act="go" data-r="clientOrders"><small>Active client orders</small><b>${active.length}</b></div>
@@ -399,37 +410,6 @@ function viewDashboard() {
 
 /* ---------- list pages ---------- */
 const LISTS = {
-  clientOrders: {
-    cols: [
-      {l: "Order No.", f: r => `<b>${esc(r.orderNo)}</b>`, c: r => r.orderNo},
-      {l: "Client", f: r => `${esc(r.client)}<div class="mute sm">${esc(r.company || "")}</div>`, c: r => r.client + (r.company ? " / " + r.company : "")},
-      {l: "Description", f: r => `<div class="sm" style="max-width:260px">${esc((r.description || "").slice(0, 90))}</div>`, c: r => r.description},
-      {l: "Due", f: r => { const d = r.dueDate ? daysFrom(r.dueDate) : null; return fmtShort(r.dueDate) + (d !== null && d < 0 && !["Completed", "Delivered", "Cancelled"].includes(r.status) ? ' <span class="pill red">late</span>' : ""); }, c: r => r.dueDate},
-      {l: "Status", f: r => pill(r.status), c: r => r.status},
-      {l: "Supplier items", f: r => { const p = progress(r.orderNo); return `<div class="bar ${p.pct === 100 ? "done" : ""}"><i style="width:${p.pct}%"></i></div><div class="mute sm">${p.rec}/${p.total} received</div>`; }, c: r => { const p = progress(r.orderNo); return p.rec + "/" + p.total; }},
-      {l: "Amount", n: 1, f: r => peso(r.amount), c: r => r.amount},
-      {l: "Balance", n: 1, f: r => peso(Math.max(0, (r.amount || 0) - (r.paid || 0))), c: r => Math.max(0, (r.amount || 0) - (r.paid || 0))}],
-    filters: [{k: "status", l: "All statuses", o: CO_STATUS, fn: (r, v) => r.status === v}],
-    rowAct: "view-co", coll: "clientOrders", sort: (a, b) => (b.orderNo || "") < (a.orderNo || "") ? -1 : 1
-  },
-  supplierOrders: {
-    cols: [
-      {l: "Alert", f: r => alertPill(lineAlert(r)), c: r => lineAlert(r)},
-      {l: "Client order", f: r => `<b>${esc(r.orderNo)}</b><div class="mute sm">${esc(r.client || "")}</div>`, c: r => r.orderNo + " " + (r.client || "")},
-      {l: "Item", f: r => esc(r.item), c: r => r.item},
-      {l: "Qty", n: 1, f: r => `${r.qtyReceived || 0} / ${r.qty ?? ""}`, c: r => r.qty},
-      {l: "Supplier", f: r => `${esc(r.supplier)}<div class="mute sm">${esc(r.poRef || "")}</div>`, c: r => r.supplier},
-      {l: "Status", f: r => pill(r.status), c: r => r.status},
-      {l: "Expected", f: r => fmtShort(r.expectedDate), c: r => r.expectedDate},
-      {l: "Total cost", n: 1, f: r => r.unitCost ? peso(lineTotal(r)) : "", c: r => lineTotal(r)},
-      {l: "Payment", f: r => pill(r.payment), c: r => r.payment}],
-    filters: [
-      {k: "orderNo", l: "All client orders", o: () => [...new Set(state.d.supplierOrders.map(s => s.orderNo))].sort(), fn: (r, v) => r.orderNo === v},
-      {k: "supplier", l: "All suppliers", o: () => [...new Set(state.d.supplierOrders.map(s => s.supplier).filter(Boolean))].sort(), fn: (r, v) => r.supplier === v},
-      {k: "status", l: "All statuses", o: SO_STATUS, fn: (r, v) => r.status === v},
-      {k: "al", l: "Any alert", o: ["OVERDUE", "DUE SOON", "TO ORDER"], fn: (r, v) => lineAlert(r) === v}],
-    rowAct: "edit-so", coll: "supplierOrders", sort: (a, b) => (a.orderNo || "") < (b.orderNo || "") ? 1 : -1
-  },
   quotations: {
     cols: [
       {l: "Quotation No.", f: r => `<b>${esc(r.quoteNo)}</b>`, c: r => r.quoteNo},
@@ -444,8 +424,9 @@ const LISTS = {
   }
 };
 function viewList() {
-  const L = LISTS[state.route], F = state.f[state.route] || {};
-  return `<div class="tools"><input type="search" id="q" placeholder="Search…" value="${esc(F.q || "")}">${L.filters.map(f => `<select data-filter="${f.k}"><option value="">${f.l}</option>${(typeof f.o === "function" ? f.o() : f.o).map(o => `<option ${F[f.k] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`).join("")}<span class="sp"></span><button class="btn ghost" data-act="csv">Export CSV</button></div><div class="card"><div class="tw" id="tbl"></div></div>`;
+  const L = LISTS[state.route], F = state.f[state.route] || {}, G = GRID[state.route];
+  const extra = state.route === "purchases" ? `<button class="btn ghost" data-act="new-po-no">+ New PO number</button>` : "";
+  return `<div class="tools"><input type="search" id="q" placeholder="Search…" value="${esc(F.q || "")}">${L.filters.map(f => `<select data-filter="${f.k}"><option value="">${f.l}</option>${(typeof f.o === "function" ? f.o() : f.o).map(o => `<option ${F[f.k] === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`).join("")}<span class="sp"></span>${extra}<button class="btn ghost" data-act="csv">Export CSV</button></div><div class="card">${G ? `<div class="gh">${G.hint}</div>` : ""}<div class="tw ${G ? "gw" : ""}" id="tbl"></div></div>`;
 }
 function filtered() {
   const L = LISTS[state.route], F = state.f[state.route] || {}, q = (F.q || "").toLowerCase();
@@ -455,6 +436,7 @@ function filtered() {
   return rows.sort(L.sort);
 }
 function renderTable() {
+  if (GRID[state.route]) return renderGrid();
   const L = LISTS[state.route], rows = filtered();
   $("#tbl").innerHTML = rows.length ? `<table class="t"><thead><tr>${L.cols.map(c => `<th class="${c.n ? "num" : ""}">${c.l}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr class="row" data-act="${L.rowAct}" data-id="${r.id}">${L.cols.map(c => `<td class="${c.n ? "num" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing here yet. Use the button at the top right to add the first record.</div>`;
 }
@@ -465,61 +447,127 @@ function exportCSV() {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv"})); a.download = `hueworkz-${state.route}-${todayISO()}.csv`; a.click();
 }
 
-/* ---------- purchase orders ---------- */
-LISTS.purchases = {
-  cols: [
-    {l: "PO No.", f: r => `<b>${esc(r.poNo)}</b>`, c: r => r.poNo},
-    {l: "Date", f: r => fmtShort(r.date), c: r => r.date},
-    {l: "Supplier", f: r => esc(r.supplier), c: r => r.supplier},
-    {l: "For client orders", f: r => `<span class="sm">${esc([...new Set((r.items || []).map(i => i.orderNo).filter(Boolean))].join(", "))}</span>`, c: r => [...new Set((r.items || []).map(i => i.orderNo).filter(Boolean))].join(", ")},
-    {l: "Expected", f: r => { const d = r.expectedDate ? daysFrom(r.expectedDate) : null; return fmtShort(r.expectedDate) + (d !== null && d < 0 && ["Sent", "Confirmed"].includes(r.status) ? ' <span class="pill red">late</span>' : ""); }, c: r => r.expectedDate},
-    {l: "Status", f: r => pill(r.status), c: r => r.status},
-    {l: "Payment", f: r => pill(r.payment), c: r => r.payment},
-    {l: "Total", n: 1, f: r => peso(poTotal(r)), c: r => poTotal(r)},
-    {l: "", f: r => `<button class="btn ghost sm" data-act="print-po" data-id="${r.id}">Print / PDF</button>`}],
-  filters: [{k: "status", l: "All statuses", o: PO_STATUS, fn: (r, v) => r.status === v}, {k: "supplier", l: "All suppliers", o: () => [...new Set(state.d.purchases.map(p => p.supplier).filter(Boolean))].sort(), fn: (r, v) => r.supplier === v}],
-  rowAct: "edit-po", coll: "purchases", sort: (a, b) => (b.poNo || "") < (a.poNo || "") ? -1 : 1
-};
-function poRow(i = {}) {
-  const opts = `<option value=""></option>` + state.d.clientOrders.map(c => `<option value="${esc(c.orderNo)}" ${c.orderNo === i.orderNo ? "selected" : ""}>${esc(c.orderNo)} — ${esc(c.client)}</option>`).join("");
-  return `<tr><td><input class="pd" value="${esc(i.desc || "")}" placeholder="Item / description"></td><td style="width:170px"><select class="po">${opts}</select></td><td style="width:70px"><input class="pq" type="number" step="any" value="${i.qty ?? ""}"></td><td style="width:80px"><input class="pu" value="${esc(i.unit || "")}" placeholder="pcs"></td><td style="width:110px"><input class="pc" type="number" step="any" value="${i.cost ?? ""}"></td><td style="width:100px;text-align:right" class="pa mute"></td><td style="width:30px"><button class="btn ghost sm" data-act="prow-del" title="Remove">×</button></td></tr>`;
-}
-function calcPO() { let t = 0; $$("#pi tbody tr").forEach(tr => { const q = Number($(".pq", tr).value), c = Number($(".pc", tr).value), a = q && c ? q * c : 0; t += a; $(".pa", tr).textContent = a ? num2(a) : ""; }); $("#po-total").textContent = peso(t); }
-const readPOItems = () => $$("#pi tbody tr").map(tr => ({desc: $(".pd", tr).value.trim(), orderNo: $(".po", tr).value, qty: $(".pq", tr).value === "" ? null : Number($(".pq", tr).value), unit: $(".pu", tr).value.trim(), cost: $(".pc", tr).value === "" ? null : Number($(".pc", tr).value)})).filter(i => i.desc);
-function openPO(id, preset) {
-  const r = id ? state.d.purchases.find(x => x.id === id) : {poNo: nextPONo(), date: todayISO(), expectedDate: addDays(todayISO(), 14), status: "Draft", payment: "Unpaid", terms: "Please confirm receipt of this purchase order and your delivery date.", preparedBy: state.profile.name, items: [{}], ...preset};
-  const S = (k, l, t = "", full = 0, extra = {}) => fieldHTML({k, l, t, full, ...extra}, r[k]);
-  openModal({wide: true, title: id ? "Edit purchase order " + esc(r.poNo) : "New purchase order", body: `
-    <div class="grid">${S("poNo", "PO No.")}${S("status", "Status", "select", 0, {o: PO_STATUS})}${S("date", "PO Date", "date")}${S("expectedDate", "Expected Delivery", "date")}</div>
-    <h4 class="sec">Supplier</h4>
-    <div class="grid">${S("supplier", "Supplier", "", 0, {list: "dl-suppliers"})}${S("contact", "Contact person / No.")}${S("address", "Address / Email", "", 1)}</div>
-    <h4 class="sec">Items to buy</h4>
-    <table class="items" id="pi"><thead><tr><th>Item / description</th><th>For client order</th><th>Qty</th><th>Unit</th><th>Unit cost (PHP)</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>${(r.items?.length ? r.items : [{}]).map(poRow).join("")}</tbody></table>
-    <div style="margin:8px 0"><button class="btn ghost sm" data-act="prow-add">+ Add item</button></div>
-    <div class="tot"><span>Total: <b id="po-total"></b></span></div>
-    <div class="grid">${S("payment", "Payment to supplier", "select", 0, {o: PAY})}${S("preparedBy", "Prepared by")}${S("terms", "Notes to supplier (printed)", "textarea", 1)}${S("notes", "Internal notes (not printed)", "textarea", 1)}</div>
-    ${id ? `<div class="hint">${r.monitored ? "✔ These items were already added to Supplier Orders monitoring." : "Tip: once the PO is saved, use “Add to monitoring” to create the Supplier Orders lines for each item tied to a client order."}</div>` : ""}`,
-    footer: `${id && isAdmin() ? `<button class="btn danger" data-act="del" data-coll="purchases" data-id="${id}" style="margin-right:auto">Delete</button>` : ""}<button class="btn ghost" data-act="close">Cancel</button>${id ? `<button class="btn ghost" data-act="print-po" data-id="${id}">Print / PDF</button>` : ""}${id && !r.monitored ? `<button class="btn or" data-act="po-monitor" data-id="${id}">Add to monitoring</button>` : ""}<button class="btn" data-act="save-po" data-id="${id || ""}">Save</button>`});
-  calcPO();
-}
-async function savePO(id) {
-  const o = readFields(["poNo", "status", "date", "expectedDate", "supplier", "contact", "address", "payment", "preparedBy", "terms", "notes"].map(k => ({k})));
-  if (!o.poNo || !o.supplier) return toast("Please fill in the PO No. and Supplier.");
-  if (!id && state.d.purchases.some(p => p.poNo === o.poNo)) return toast("That PO No. already exists.");
-  o.items = readPOItems(); if (!o.items.length) return toast("Add at least one item.");
-  o.total = o.items.reduce((s, i) => s + (i.qty && i.cost ? i.qty * i.cost : 0), 0);
-  await saveDoc("purchases", id, o); closeModal(); toast("Saved");
-}
-async function poToMonitor(id) {
-  const p = state.d.purchases.find(x => x.id === id); if (!p) return;
-  const lines = (p.items || []).filter(i => i.orderNo);
-  if (!lines.length) return toast("Tag at least one item with a client order first, then save.");
-  if (!confirm(`Create ${lines.length} Supplier Orders line(s) from ${p.poNo}?`)) return;
-  for (const i of lines) {
-    const co = state.d.clientOrders.find(c => c.orderNo === i.orderNo);
-    await saveDoc("supplierOrders", null, {orderNo: i.orderNo, client: co ? co.client : "", item: i.desc, qty: i.qty, supplier: p.supplier, poRef: p.poNo, unitCost: i.cost, status: p.status === "Received" ? "Received" : "Ordered", expectedDate: p.expectedDate || "", dateOrdered: p.date || "", payment: p.payment || "Unpaid", qtyReceived: p.status === "Received" ? i.qty : 0});
+/* ---------- inline entry grids ---------- */
+const gi = (k, l, o = {}) => ({k, l, t: "text", c: r => r[k], ...o});
+const progCell = r => { const p = progress(r.orderNo); return `<div class="bar ${p.pct === 100 ? "done" : ""}" style="min-width:90px"><i style="width:${p.pct}%"></i></div><span class="mute sm">${p.rec}/${p.total} received</span>`; };
+const PO_ST = ["Draft", "Ordered", "Partially received", "Received", "Delayed", "Cancelled"];
+const orderOpts = () => state.d.clientOrders.map(c => [c.orderNo, `${c.orderNo} — ${c.client}`]);
+const GRID = {
+  clientOrders: {
+    coll: "clientOrders", required: ["orderNo", "client"], uniq: "orderNo",
+    hint: "Type in the top (orange) row to add an order — press Tab to move across, Enter or click away to save. Edit any cell directly; it saves when you leave it.",
+    defaults: () => ({orderNo: nextOrderNo(), orderDate: todayISO(), status: "New"}),
+    cols: [gi("orderNo", "Order No.", {w: 105, stk: 1}), gi("client", "Client Name", {w: 150}), gi("company", "Company", {w: 140}), gi("description", "Description", {w: 230}),
+      gi("dueDate", "Due Date", {t: "date", w: 135}), gi("status", "Status", {t: "select", o: CO_STATUS, w: 150}), gi("amount", "Amount (₱)", {t: "number", w: 115}), gi("paid", "Collected (₱)", {t: "number", w: 115}),
+      {l: "Balance", ro: 1, n: 1, f: r => peso(Math.max(0, (r.amount || 0) - (r.paid || 0))), c: r => Math.max(0, (r.amount || 0) - (r.paid || 0))},
+      {l: "Supplier items", ro: 1, f: progCell, c: r => { const p = progress(r.orderNo); return p.rec + "/" + p.total; }},
+      gi("contact", "Contact No.", {w: 125}), gi("email", "Email", {w: 180}), gi("quoteNo", "Quotation No.", {w: 145}), gi("orderDate", "Order Date", {t: "date", w: 135}), gi("notes", "Notes", {w: 230})],
+    filters: [{k: "status", l: "All statuses", o: CO_STATUS, fn: (r, v) => r.status === v}],
+    sort: (a, b) => (b.orderNo || "") < (a.orderNo || "") ? -1 : 1,
+    actions: r => `<button class="btn ghost sm" data-act="view-co" data-id="${r.id}">Items</button>`
+  },
+  supplierOrders: {
+    coll: "supplierOrders", required: ["orderNo", "item", "supplier", "qty"],
+    hint: "One row per item bought from a supplier. Type in the top (orange) row; the Client Order column links it to the customer. The alert updates by itself.",
+    defaults: prev => ({orderNo: prev?.orderNo || "", status: "Not yet ordered", payment: "Unpaid"}),
+    cols: [{l: "Alert", ro: 1, f: r => alertPill(lineAlert(r)), c: r => lineAlert(r)}, gi("orderNo", "Client Order", {t: "select", o: orderOpts, w: 190, stk: 0}), gi("item", "Item / Description", {w: 220}), gi("qty", "Qty", {t: "number", w: 80}),
+      gi("supplier", "Supplier", {w: 150}), gi("status", "Status", {t: "select", o: SO_STATUS, w: 160}), gi("expectedDate", "Expected", {t: "date", w: 135}), gi("qtyReceived", "Qty Recvd", {t: "number", w: 90}),
+      gi("unitCost", "Unit Cost (₱)", {t: "number", w: 115}), {l: "Total (₱)", ro: 1, n: 1, f: r => r.unitCost ? peso(lineTotal(r)) : "", c: r => lineTotal(r)},
+      gi("payment", "Payment", {t: "select", o: PAY, w: 110}), gi("poRef", "Supplier PO / Ref", {w: 140}), gi("dateOrdered", "Date Ordered", {t: "date", w: 135}), gi("dateReceived", "Date Received", {t: "date", w: 135}), gi("notes", "Notes", {w: 220})],
+    filters: [
+      {k: "orderNo", l: "All client orders", o: () => [...new Set(state.d.supplierOrders.map(s => s.orderNo))].sort(), fn: (r, v) => r.orderNo === v},
+      {k: "supplier", l: "All suppliers", o: () => [...new Set(state.d.supplierOrders.map(s => s.supplier).filter(Boolean))].sort(), fn: (r, v) => r.supplier === v},
+      {k: "status", l: "All statuses", o: SO_STATUS, fn: (r, v) => r.status === v},
+      {k: "al", l: "Any alert", o: ["OVERDUE", "DUE SOON", "TO ORDER"], fn: (r, v) => lineAlert(r) === v}],
+    sort: (a, b) => (a.orderNo || "") < (b.orderNo || "") ? 1 : -1,
+    patch(o, k, prev) {
+      const out = {};
+      if (k === "orderNo") { const co = state.d.clientOrders.find(c => c.orderNo === o.orderNo); out.client = co ? co.client : ""; }
+      if (k === "status" && o.status === "Received") { if (o.qtyReceived == null) out.qtyReceived = o.qty; if (!o.dateReceived) out.dateReceived = todayISO(); }
+      if (k === "qtyReceived" && o.qty && o.qtyReceived != null) {
+        if (o.qtyReceived >= o.qty) { out.status = "Received"; if (!o.dateReceived) out.dateReceived = todayISO(); }
+        else if (o.qtyReceived > 0 && ["Ordered", "Not yet ordered"].includes(o.status)) out.status = "Partially received";
+      }
+      return out;
+    },
+    actions: () => ""
+  },
+  purchases: {
+    coll: "purchases", required: ["poNo", "supplier", "item"],
+    hint: "Purchase order list — one row per item. Rows with the same PO No. belong to the same purchase order. Type in the top (orange) row; it keeps the PO No., date and supplier so you can add the next item quickly. Use “+ New PO number” to start another PO, and Print PO to get the form.",
+    defaults: prev => ({poNo: prev?.poNo || nextPONo(), date: prev?.date || todayISO(), supplier: prev?.supplier || "", expectedDate: prev?.expectedDate || "", status: prev?.status || "Draft", payment: prev?.payment || "Unpaid"}),
+    cols: [gi("poNo", "PO No.", {w: 150, stk: 1}), gi("date", "PO Date", {t: "date", w: 135}), gi("supplier", "Supplier", {w: 150}), gi("orderNo", "For client order", {t: "select", o: orderOpts, w: 190}),
+      gi("item", "Item / Description", {w: 220}), gi("qty", "Qty", {t: "number", w: 80}), gi("unit", "Unit", {w: 80}), gi("cost", "Unit Cost (₱)", {t: "number", w: 115}),
+      {l: "Amount (₱)", ro: 1, n: 1, f: r => r.qty && r.cost ? peso(r.qty * r.cost) : "", c: r => r.qty && r.cost ? r.qty * r.cost : ""},
+      gi("expectedDate", "Expected", {t: "date", w: 135}), gi("status", "Status", {t: "select", o: PO_ST, w: 160}), gi("payment", "Payment", {t: "select", o: PAY, w: 110}), gi("notes", "Notes", {w: 220})],
+    filters: [{k: "po", l: "All PO numbers", o: () => [...new Set(state.d.purchases.map(p => p.poNo))].sort().reverse(), fn: (r, v) => r.poNo === v},
+      {k: "supplier", l: "All suppliers", o: () => [...new Set(state.d.purchases.map(p => p.supplier).filter(Boolean))].sort(), fn: (r, v) => r.supplier === v},
+      {k: "status", l: "All statuses", o: PO_ST, fn: (r, v) => r.status === v}],
+    sort: (a, b) => (b.poNo || "") < (a.poNo || "") ? -1 : (b.poNo === a.poNo ? ((a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)) : 1),
+    actions: r => `<button class="btn ghost sm" data-act="print-po" data-po="${esc(r.poNo)}">Print PO</button> ${r.orderNo && !r.tracked ? `<button class="btn ghost sm" data-act="po-track" data-id="${r.id}" title="Create a Supplier Orders line to monitor delivery">→ Track</button>` : (r.tracked ? '<span class="pill grn">tracked</span>' : "")}`
   }
-  await updateDoc(doc(db, "purchases", id), {monitored: true}); closeModal(); toast("Added to Supplier Orders");
+};
+LISTS.clientOrders = GRID.clientOrders; LISTS.supplierOrders = GRID.supplierOrders; LISTS.purchases = GRID.purchases;
+const canDel = r => isAdmin() || (r.createdUid && r.createdUid === state.user?.uid);
+function gCell(col, r, id) {
+  if (col.ro) return `<td class="ro ${col.n ? "num" : ""}">${col.f(r)}</td>`;
+  const v = r[col.k] ?? "", a = `data-k="${col.k}" data-id="${id}"`; let el;
+  if (col.t === "select") {
+    const opts = typeof col.o === "function" ? col.o() : col.o, pc = pillClass(v);
+    el = `<select class="g ${pc ? "p-" + pc : ""}" ${a}><option value=""></option>${opts.map(o => { const [ov, ol] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(ov)}" ${ov === v ? "selected" : ""}>${esc(ol)}</option>`; }).join("")}</select>`;
+  } else el = `<input class="g" ${a} type="${col.t}" value="${esc(v)}" ${col.k === "supplier" ? 'list="dl-suppliers"' : ""} ${col.t === "number" ? 'step="any"' : ""} autocomplete="off">`;
+  return `<td class="${col.stk ? "stk" : ""}" style="min-width:${col.w || 100}px">${el}</td>`;
+}
+function draftOf(R) {
+  const G = GRID[R]; let d = state.draft[R];
+  if (!d || !d._u) d = state.draft[R] = {...G.defaults(state.prevRow[R])};
+  return d;
+}
+function renderGrid() {
+  const R = state.route, G = GRID[R], rows = filtered(), d = draftOf(R);
+  const head = G.cols.map(c => `<th class="${c.stk ? "stk" : ""} ${c.n ? "num" : ""}">${c.l}</th>`).join("") + "<th></th>";
+  const draft = `<tr class="draftrow" data-rid="draft">${G.cols.map(c => gCell(c, d, "draft")).join("")}<td class="act"><span class="mute sm">＋ new</span></td></tr>`;
+  const body = rows.map(r => `<tr data-rid="${r.id}">${G.cols.map(c => gCell(c, r, r.id)).join("")}<td class="act">${G.actions(r)} ${canDel(r) ? `<button class="xbtn" data-act="del" data-coll="${G.coll}" data-id="${r.id}" title="Delete">✕</button>` : ""}</td></tr>`).join("");
+  $("#tbl").innerHTML = `<table class="gt2"><thead><tr>${head}</tr></thead><tbody>${draft}${body}</tbody></table>`;
+}
+const gridFocused = () => { const a = document.activeElement; return !!(a && a.closest && a.closest("#tbl") && /INPUT|SELECT/.test(a.tagName)); };
+const gridVal = el => el.type === "number" ? (el.value === "" ? null : Number(el.value)) : el.value.trim();
+async function commitDraft() {
+  const R = state.route, G = GRID[R]; if (!G || state.committing) return;
+  const d = state.draft[R]; if (!d || !d._u) return;
+  if (G.required.some(k => d[k] == null || d[k] === "")) return;
+  const o = {}; Object.keys(d).forEach(k => { if (!k.startsWith("_") && d[k] !== "" && d[k] !== undefined) o[k] = d[k]; });
+  if (G.uniq && state.d[R].some(x => x[G.uniq] === o[G.uniq])) { toast("That " + G.cols.find(c => c.k === G.uniq).l + " already exists."); return; }
+  state.committing = true;
+  try {
+    ["orderNo", "status"].forEach(k => Object.assign(o, G.patch ? G.patch({...o}, k) : {}));
+    await saveDoc(G.coll, null, o);
+    state.prevRow[R] = o; state.draft[R] = null; toast("Saved");
+  } catch (er) { console.error(er); toast(er.code === "permission-denied" ? "You don't have permission for that." : "Error: " + er.message); }
+  state.committing = false;
+  state.pending = false; renderTable();
+  if (!gridFocused()) $("tr.draftrow input,tr.draftrow select")?.focus();
+}
+async function saveField(R, id, k, v, el) {
+  const G = GRID[R], r = state.d[R].find(x => x.id === id); if (!r) return;
+  if ((r[k] ?? "") === (v ?? "")) return;
+  if (k === G.uniq && state.d[R].some(x => x.id !== id && x[G.uniq] === v)) { toast("That value already exists."); el.value = r[k] ?? ""; return; }
+  if (G.required.includes(k) && (v == null || v === "")) { toast("This field can't be empty."); el.value = r[k] ?? ""; return; }
+  const next = {...r, [k]: v}, extra = G.patch ? G.patch(next, k) : {};
+  await updateDoc(doc(db, G.coll, id), {[k]: v, ...extra, updatedAt: serverTimestamp(), updatedBy: state.profile.name});
+}
+async function poTrack(id) {
+  const l = state.d.purchases.find(x => x.id === id); if (!l || !l.orderNo) return;
+  const co = state.d.clientOrders.find(c => c.orderNo === l.orderNo);
+  await saveDoc("supplierOrders", null, {orderNo: l.orderNo, client: co ? co.client : "", item: l.item, qty: l.qty, supplier: l.supplier, poRef: l.poNo, unitCost: l.cost, status: l.status === "Draft" ? "Not yet ordered" : l.status, expectedDate: l.expectedDate || "", dateOrdered: l.date || "", payment: l.payment || "Unpaid", qtyReceived: l.status === "Received" ? l.qty : 0});
+  await updateDoc(doc(db, "purchases", id), {tracked: true}); toast("Added to Supplier Orders");
+}
+function printPO(poNo) {
+  const lines = state.d.purchases.filter(l => l.poNo === poNo).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)); if (!lines.length) return;
+  const f = lines[0], p = {poNo, date: f.date, supplier: f.supplier, expectedDate: lines.map(l => l.expectedDate).filter(Boolean).sort().pop() || "", contact: "", address: "", preparedBy: state.profile.name, terms: "Please confirm receipt of this purchase order and your delivery date. Delivery to: " + COMPANY.address + ".", items: lines.map(l => ({desc: l.item, orderNo: l.orderNo, qty: l.qty, unit: l.unit, cost: l.cost}))};
+  $("#print").innerHTML = poPrintHTML(p);
+  const prev = document.title; document.title = poNo + " - " + (f.supplier || "");
+  setTimeout(() => { window.print(); document.title = prev; }, 150);
 }
 function poPrintHTML(p) {
   const items = p.items || [], total = poTotal(p); let n = 0;
@@ -531,57 +579,23 @@ function poPrintHTML(p) {
   <div class="two"><div><b>Address:</b><span>${esc(COMPANY.address)}</span><b>Contact No.:</b><span>${esc(COMPANY.contact)}</span><b>Email:</b><span>${esc(COMPANY.email)}</span></div>
   <div class="r"><b>PO No.:</b><span>${esc(p.poNo)}</span><b>Date:</b><span>${fmtLong(p.date)}</span><b>Expected Delivery:</b><span>${fmtLong(p.expectedDate)}</span></div></div>
   <hr>
-  <div class="two"><div><b>Supplier:</b><b>${esc(p.supplier)}</b><b>Contact:</b><span>${esc(p.contact || "")}</span><b>Address / Email:</b><span>${esc(p.address || "")}</span></div><div></div></div>
+  <div class="two"><div><b>Supplier:</b><b>${esc(p.supplier)}</b></div><div></div></div>
   <div class="intro">Please supply the following items:</div>
   <table><thead><tr><th style="width:7%">No.</th><th>Description</th><th style="width:13%">Client Order</th><th style="width:8%">Qty</th><th style="width:8%">Unit</th><th style="width:14%">Unit Cost (PHP)</th><th style="width:14%">Amount (PHP)</th></tr></thead><tbody>${rows}</tbody></table>
   <div class="gt"><table><tr><td>GRAND TOTAL</td><td class="v">${num2(total)}</td></tr></table></div>
   <div class="tc"><div class="bar2">NOTES</div><div style="margin-top:3px">${esc(p.terms || "")}</div>
   <div class="sig"><div><b><i>Prepared by:</i></b><div style="margin-top:30px">${esc(p.preparedBy || "")}</div><div>Date: ${fmtLong(p.date)}</div></div><div><b><i>Supplier Conforme:</i></b><div class="ln"></div><div>Date: ____________________________</div></div></div></div></div>`;
 }
-function printPO(id) {
-  const p = state.d.purchases.find(x => x.id === id); if (!p) return;
-  $("#print").innerHTML = poPrintHTML(p);
-  const prev = document.title; document.title = p.poNo + " - " + (p.supplier || "");
-  setTimeout(() => { window.print(); document.title = prev; }, 150);
-}
 
-/* ---------- client orders ---------- */
-function openCO(id, preset) {
-  const r = id ? state.d.clientOrders.find(x => x.id === id) : {orderNo: nextOrderNo(), orderDate: todayISO(), status: "New", ...preset};
-  const F = coFields();
-  openModal({title: id ? "Edit client order " + esc(r.orderNo) : "New client order", body: `<div class="grid">${F.map(f => fieldHTML(f, r[f.k])).join("")}</div>`,
-    footer: `${id && isAdmin() ? `<button class="btn danger" data-act="del" data-coll="clientOrders" data-id="${id}" style="margin-right:auto">Delete</button>` : ""}<button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="save-co" data-id="${id || ""}">Save</button>`});
-}
-async function saveCO(id) {
-  const F = coFields(), o = readFields(F), m = missing(F, o);
-  if (m) return toast("Please fill in: " + m);
-  if (!id && state.d.clientOrders.some(c => c.orderNo === o.orderNo)) return toast("That Order No. already exists.");
-  await saveDoc("clientOrders", id, o); closeModal(); toast("Saved");
-}
+/* ---------- client order detail ---------- */
 function viewCO(id) {
   const c = state.d.clientOrders.find(x => x.id === id); if (!c) return;
   const lines = state.d.supplierOrders.filter(s => s.orderNo === c.orderNo), p = progress(c.orderNo), cost = lines.filter(l => l.status !== "Cancelled").reduce((a, l) => a + lineTotal(l), 0);
   openModal({wide: true, title: `${esc(c.orderNo)} — ${esc(c.client)}`, body: `
-    <div class="kv"><span>Company</span><span>${esc(c.company || "—")}</span><span>Contact</span><span>${esc(c.contact || "—")} ${esc(c.email || "")}</span><span>Description</span><span>${esc(c.description || "—")}</span><span>Status</span><span>${pill(c.status)}</span><span>Order / due date</span><span>${fmtShort(c.orderDate) || "—"} → ${fmtShort(c.dueDate) || "—"}</span><span>Amount / collected</span><span>${peso(c.amount)} / ${peso(c.paid)}</span><span>Quotation</span><span>${esc(c.quoteNo || "—")}</span><span>Supplier cost</span><span>${peso(cost)}</span></div>
+    <div class="kv"><span>Company</span><span>${esc(c.company || "—")}</span><span>Description</span><span>${esc(c.description || "—")}</span><span>Status</span><span>${pill(c.status)}</span><span>Due date</span><span>${fmtShort(c.dueDate) || "—"}</span><span>Amount / collected</span><span>${peso(c.amount)} / ${peso(c.paid)}</span><span>Supplier cost so far</span><span>${peso(cost)}</span></div>
     <h4 class="sec">Items bought from suppliers (${p.rec}/${p.total} received)</h4>
-    ${lines.length ? `<div class="tw"><table class="t"><thead><tr><th>Alert</th><th>Item</th><th>Supplier</th><th>Qty</th><th>Status</th><th>Expected</th><th>Payment</th></tr></thead><tbody>${lines.map(s => `<tr class="row" data-act="edit-so" data-id="${s.id}"><td>${alertPill(lineAlert(s))}</td><td>${esc(s.item)}</td><td>${esc(s.supplier)}</td><td>${s.qtyReceived || 0}/${s.qty}</td><td>${pill(s.status)}</td><td>${fmtShort(s.expectedDate)}</td><td>${pill(s.payment)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="mute">No supplier items yet for this order.</div>`}`,
-    footer: `<button class="btn ghost" data-act="edit-co" data-id="${id}">Edit order</button><button class="btn or" data-act="new-so-for" data-order="${esc(c.orderNo)}">+ Add supplier item</button>`});
-}
-
-/* ---------- supplier orders ---------- */
-function openSO(id, preset) {
-  const r = id ? state.d.supplierOrders.find(x => x.id === id) : {status: "Not yet ordered", payment: "Unpaid", ...preset};
-  const F = soFields();
-  openModal({title: id ? "Edit supplier item" : "New supplier item", body: `<div class="grid">${F.map(f => fieldHTML(f, r[f.k])).join("")}</div><div class="hint">The alert (To order / Due soon / Overdue) is worked out automatically from Status and Expected Delivery.</div>`,
-    footer: `${id && isAdmin() ? `<button class="btn danger" data-act="del" data-coll="supplierOrders" data-id="${id}" style="margin-right:auto">Delete</button>` : ""}<button class="btn ghost" data-act="close">Cancel</button><button class="btn" data-act="save-so" data-id="${id || ""}">Save</button>`});
-}
-async function saveSO(id) {
-  const F = soFields(), o = readFields(F), m = missing(F, o);
-  if (m) return toast("Please fill in: " + m);
-  const co = state.d.clientOrders.find(c => c.orderNo === o.orderNo); o.client = co ? co.client : "";
-  if (o.status === "Received") { if (o.qtyReceived == null) o.qtyReceived = o.qty; if (!o.dateReceived) o.dateReceived = todayISO(); }
-  if (o.qtyReceived != null && o.qty && o.qtyReceived > 0 && o.qtyReceived < o.qty && o.status === "Ordered") o.status = "Partially received";
-  await saveDoc("supplierOrders", id, o); closeModal(); toast("Saved");
+    ${lines.length ? `<div class="tw"><table class="t"><thead><tr><th>Alert</th><th>Item</th><th>Supplier</th><th>Qty</th><th>Status</th><th>Expected</th><th>Payment</th></tr></thead><tbody>${lines.map(s => `<tr><td>${alertPill(lineAlert(s))}</td><td>${esc(s.item)}</td><td>${esc(s.supplier)}</td><td>${s.qtyReceived || 0}/${s.qty}</td><td>${pill(s.status)}</td><td>${fmtShort(s.expectedDate)}</td><td>${pill(s.payment)}</td></tr>`).join("")}</tbody></table></div>` : `<div class="mute">No supplier items yet for this order.</div>`}`,
+    footer: `<button class="btn ghost" data-act="close">Close</button><button class="btn or" data-act="go-so-order" data-order="${esc(c.orderNo)}">Open in Supplier Orders</button>`});
 }
 
 /* ---------- quotations ---------- */
@@ -646,9 +660,10 @@ function printQ(id) {
   const prev = document.title; document.title = q.quoteNo + " - " + (q.client || "");
   setTimeout(() => { window.print(); document.title = prev; }, 150);
 }
-function qToOrder(id) {
+async function qToOrder(id) {
   const q = state.d.quotations.find(x => x.id === id); if (!q) return;
-  openCO(null, {quoteNo: q.quoteNo, client: q.client, company: q.company, contact: q.contact, email: q.email, amount: qTotal(q), paid: 0, description: qItems(q).filter(i => i.qty).map(i => `${i.qty} ${i.unit || ""} ${i.desc}`).join("; "), status: "Confirmed"});
+  await saveDoc("clientOrders", null, {orderNo: nextOrderNo(), quoteNo: q.quoteNo, client: q.client, company: q.company || "", contact: q.contact || "", email: q.email || "", amount: qTotal(q), paid: 0, orderDate: todayISO(), description: qItems(q).filter(i => i.qty).map(i => `${i.qty} ${i.unit || ""} ${i.desc}`).join("; "), status: "Confirmed"});
+  toast("Client order created from " + q.quoteNo); go("clientOrders");
 }
 
 /* ---------- team ---------- */
@@ -690,26 +705,16 @@ document.addEventListener("click", async e => {
       case "close": closeModal(); break;
       case "logout": await signOut(auth); break;
       case "csv": exportCSV(); break;
-      case "new-co": openCO(); break;
-      case "edit-co": openCO(id); break;
       case "view-co": viewCO(id); break;
-      case "save-co": await saveCO(id); break;
-      case "new-so": openSO(); break;
-      case "new-so-for": openSO(null, {orderNo: a.dataset.order}); break;
-      case "edit-so": openSO(id); break;
-      case "save-so": await saveSO(id); break;
-      case "new-po": openPO(); break;
-      case "edit-po": openPO(id); break;
-      case "save-po": await savePO(id); break;
-      case "print-po": e.stopPropagation(); printPO(id); break;
-      case "po-monitor": await poToMonitor(id); break;
-      case "prow-add": $("#pi tbody").insertAdjacentHTML("beforeend", poRow()); break;
-      case "prow-del": a.closest("tr").remove(); calcPO(); break;
+      case "go-so-order": closeModal(); state.f.supplierOrders = {orderNo: a.dataset.order}; go("supplierOrders"); break;
+      case "print-po": e.stopPropagation(); printPO(a.dataset.po); break;
+      case "po-track": await poTrack(id); break;
+      case "new-po-no": state.draft.purchases = {_u: 1, poNo: nextPONo(), date: todayISO(), status: "Draft", payment: "Unpaid"}; state.prevRow.purchases = null; renderTable(); $("tr.draftrow input,tr.draftrow select")?.focus(); break;
       case "new-q": openQ(); break;
       case "edit-q": openQ(id); break;
       case "save-q": await saveQ(id); break;
       case "print-q": e.stopPropagation(); printQ(id); break;
-      case "q-to-order": e.stopPropagation(); qToOrder(id); break;
+      case "q-to-order": e.stopPropagation(); await qToOrder(id); break;
       case "row-add": $("#qi tbody").insertAdjacentHTML("beforeend", itemRow()); break;
       case "row-or": $("#qi tbody").insertAdjacentHTML("beforeend", itemRow({desc: "------ or -------"})); break;
       case "row-del": a.closest("tr").remove(); calcQ(); break;
@@ -724,12 +729,30 @@ document.addEventListener("click", async e => {
   } catch (er) { console.error(er); toast(er.code === "permission-denied" ? "You don't have permission for that." : "Error: " + (er.message || er)); }
 });
 document.addEventListener("input", e => {
-  if (e.target.id === "q") { (state.f[state.route] ||= {}).q = e.target.value; renderTable(); }
-  if (e.target.closest("#qi") || e.target.id === "q-dp") calcQ();
-  if (e.target.closest("#pi")) calcPO();
+  const t = e.target;
+  if (t.id === "q") { (state.f[state.route] ||= {}).q = t.value; renderTable(); return; }
+  if (t.closest("#qi") || t.id === "q-dp") calcQ();
+  if (t.dataset?.k && t.dataset.id === "draft") { const d = draftOf(state.route); d._u = 1; d[t.dataset.k] = gridVal(t); }
+});
+document.addEventListener("focusout", e => {
+  const t = e.target; if (!t.closest) return;
+  const tr = t.closest("tr.draftrow");
+  setTimeout(() => {
+    if (tr && !(tr.contains(document.activeElement))) commitDraft();
+    if (state.pending && !gridFocused()) { state.pending = false; render(); }
+  }, 30);
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.dataset?.k && e.target.tagName === "INPUT") e.target.blur();
 });
 document.addEventListener("change", async e => {
   const t = e.target;
+  if (t.dataset.k) {
+    const R = state.route;
+    if (t.dataset.id === "draft") { const d = draftOf(R); d._u = 1; d[t.dataset.k] = gridVal(t); const G = GRID[R]; if (G.patch && ["orderNo", "status"].includes(t.dataset.k)) { /* applied on save */ } }
+    else { try { await saveField(R, t.dataset.id, t.dataset.k, gridVal(t), t); } catch (er) { toast(er.code === "permission-denied" ? "You don't have permission for that." : "Error: " + er.message); } }
+    return;
+  }
   if (t.dataset.filter) { (state.f[state.route] ||= {})[t.dataset.filter] = t.value; renderTable(); }
   if (t.dataset.role) { try { await updateDoc(doc(db, "users", t.dataset.role), {role: t.value}); toast("Role updated"); } catch (er) { toast("Error: " + er.message); } }
 });
